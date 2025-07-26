@@ -23,8 +23,14 @@ Nx = 110; Ny = 110;      % grid points
 
 dx = 1e-3; dy = dx;         %dx = 0.2*landa/(10*sqrt(30)); dy = dx;   % spatial step (1 mm)   dx<landa/(10 sqrt(er_max))  
 dt = dx/(sqrt(2*21)*c);         % CFL stability
-Nt = round(4*T/dt);               % time steps
-Ns=round(Nt) ; % samples of fft
+
+%round kardan e fs:
+fs=1/dt;
+fs=round(fs/f0)*f0;
+dt=1/fs;
+
+Nt = round(3*T/dt);               % time steps
+Ns=round(Nt/3*2) ; % samples of fft
 
 % pml
 pml_L=70;
@@ -138,7 +144,16 @@ clear trash;
   % er_test=ones(Nx,Ny)*er_bg_c;
   % sigma_test=ones(Nx,Ny)*sigma_bg_c;
 
-for itr=1:40 % iteration
+  deltaEr_Vec=zeros(Np,1);
+
+  deltaEr=zeros(Nx_box,Nx_box);
+  B2=0;
+  B=0;
+  B1=0;
+  AB_norm=0;
+  B3=0;
+  B4=0;
+for itr=0:6 % iteration
 
     %first guess
     % if itr>=1
@@ -154,43 +169,82 @@ for itr=1:40 % iteration
     A=Calc_Jacobi(Np,Ntx,Ek_ij,ds);
 % 
 %     %edit this section !!
-    Sij_predected=zeros(Ntx,Ntx);
-   
-%     %first guess :
-    for(I=1:Ntx)
-        for(J=1:Ntx)
-            Holder_Integrand=0;
-            for Ix=1:Nx_box
-                for Iy=1:Nx_box
-                    contrast = eps_r_predect(Ix,Iy)-(er_bg_c);      % shak daram in bakhsh ra !!!!!!!!!!!!!!!!! $$$$$$$$$$$$$$$$$$$$$ !!! noo noo noo nooo,,,,
-                    hold=Ek_ij(I,Ix,Iy).*Ek_ij(J,Ix,Iy);
-                    A_size=size(hold);
-                    Holder_Integrand=Holder_Integrand+hold*ds *contrast;
-                end
-            end
-            Sij_predected(I,J) = Sij(I,J)-1i*(omega*eps0)/(2*ai*aj).*Holder_Integrand;
-        end
-    end
+  %edit this section !!
+    Sij_error=zeros(Ntx,Ntx);
+    Sij_error=Sij_real-Sij;
+    % Sij_error=Sij_error/norm(Sij_error,'fro');
+    % Ek_ij=Ek_ij/norm(Ek_ij,"fro");
 
-    % compute the error
-    Sij_error=Sij_real-Sij_predected;
+    %///////////
     % sij_holder(itr,:,:)=Sij_predected; % for comparing if we have any change ...
-
+    % 
+    % DeltaS_vec = reshape(Sij_error.', [], 1);  % column vector, size 256x1
+    % 
+    % %4. Solve the Inverse Problem (Regularized)
+    % lambda = 1e-9;  % regularization factor
+    % DeltaEps_vec = (A' * A + lambda * eye(Np)) \ (A' * DeltaS_vec);
+    % % DeltaEps_vec = (A' * A ) \ ( A'*DeltaS_vec);   unstable !!! shit...
+    % DeltaEps = reshape(DeltaEps_vec, [Nx_box, Nx_box]);  
+ 
+    %% IMATCS-L2==================      X=T(landa_k) *( x + A' ( b-Ax) -landa2*x ))
+    
     DeltaS_vec = reshape(Sij_error.', [], 1);  % column vector, size 256x1
+    
+    % T_landa = thresholding operator   
+    A_norm = A / norm(A, 'fro');
+    maxEigenVal = (svds(A_norm, 1))^2;  
+    
+    T0= 135 ; % initial threshold value    T0 :  125 ~ 150
+    th_step  =  0.01  ;% threshold step  
+    z1 = 1.9/maxEigenVal;   % 1.9/rm(A.*A')
+    z2 = 0.005 ;  % cnovergence parameter  
+    
+    % B=A*deltaEr_Vec;
+    % if(norm(B,'fro') >0) 
+    % B=B/norm(B,'fro');  % B besiar bozorg mishavad . norm ash mikonam :/  khodaaa komaaak...
+    % end
+    % if(norm(deltaEr_Vec)>0)
+    %     B2=deltaEr_Vec/norm(deltaEr_Vec);
+    % end
+    % deltaEr_Vec=(1/(1+z2))*T0*exp(-th_step*itr)*(B2+z1*A'*(DeltaS_vec-B));
+    % deltaEr= reshape(deltaEr_Vec, [Nx_box, Nx_box]);  
+   
+     B=deltaEr_Vec;
+    if(norm(B,'fro') >0) 
+    B1=B/norm(B,'fro');  % B besiar bozorg mishavad . norm ash mikonam :/  khodaaa komaaak...
+    end
+    AB=A_norm*B;
+    if(norm(AB)>1)
+    AB_norm=AB/norm(AB,'fro');
+    else 
+        AB_norm=AB;
+    end
+    Ds=DeltaS_vec;
+    if(norm(DeltaS_vec,'fro')>0)
+    Ds=DeltaS_vec/norm(DeltaS_vec,'fro');
+    end
+    B3=A_norm'*(Ds-AB_norm);
+    B4=B3;
+    if(norm(B3)>1)
+    B4=B3/norm(B3);
+    end
+    B2=B1+z1*B4;   % aya bayad norm A' ra begiram ? ya norm za*a*() ?  
+    % if(norm(B2)>0)
+    %     B2=B2/norm(B2,'fro');
+    % end
+    deltaEr_Vec=(1/(1+z2))*T0*exp(-1*th_step*itr)*(B2);
+    deltaEr= reshape(deltaEr_Vec, [Nx_box, Nx_box]);  
 
-    %4. Solve the Inverse Problem (Regularized)
-    lambda = 1e-5;  % regularization factor
-    DeltaEps_vec = (A' * A + lambda * eye(Np)) \ (A' * DeltaS_vec);
-    % DeltaEps_vec = (A' * A ) \ ( A'*DeltaS_vec);   unstable !!! shit...
-    DeltaEps = reshape(DeltaEps_vec, [Nx_box, Nx_box]);  
 
+
+    %% ================
 
     % eps_r_predect=eps_r_predect+DeltaEps;  % result to unstability ! er<1 !! shit 
-    eps_r_predect=max(real(eps_r_predect+DeltaEps),er_bg_c) + j*imag(eps_r_predect+DeltaEps);        % bayad j* imag  ra virayesh konam !!    hes mikonam nadorost ast
+    eps_r_predect=max(real(eps_r_predect+deltaEr),er_bg_c) + j*imag(eps_r_predect+deltaEr);        % bayad j* imag  ra virayesh konam !!    hes mikonam nadorost ast
 
     % DeltaEps_itr(itr,:,:)=DeltaEps;  % for debug;
-    eps_r_new( xmin_box-pml_L :xmax_box-pml_L ,xmin_box-pml_L :xmax_box-pml_L )= max(eps_r_new(xmin_box-pml_L :xmax_box-pml_L ,xmin_box-pml_L :xmax_box-pml_L) + real(DeltaEps),real(er_bg_c)); %all space
-    sigma_new( xmin_box-pml_L :xmax_box-pml_L ,xmin_box-pml_L :xmax_box-pml_L)= max(sigma_new( xmin_box-pml_L :xmax_box-pml_L ,xmin_box-pml_L :xmax_box-pml_L)+ abs(imag(DeltaEps))*eps0*omega,sigma_bg_c);
+    eps_r_new( xmin_box-pml_L :xmax_box-pml_L ,xmin_box-pml_L :xmax_box-pml_L )= max(eps_r_new(xmin_box-pml_L :xmax_box-pml_L ,xmin_box-pml_L :xmax_box-pml_L) + real(deltaEr),real(er_bg_c)); %all space
+    sigma_new( xmin_box-pml_L :xmax_box-pml_L ,xmin_box-pml_L :xmax_box-pml_L)= max(sigma_new( xmin_box-pml_L :xmax_box-pml_L ,xmin_box-pml_L :xmax_box-pml_L)+ abs(imag(deltaEr))*eps0*omega,sigma_bg_c);
 
     if( any(eps_r_new(:)<1))
     text='epsr < 1 wtf !!'
@@ -217,6 +271,8 @@ keyboard;
 
 function Jacobi = Calc_Jacobi(Np,Ntx,E_inc_k ,ds)
 
+omega=2*pi*1e9;
+eps0 = 8.85e-12;
 % Np      ---> total number of pixels in reconstruction region
 % Ntx    ----> Number of transmitters
 %A       ----> Jacobi matrix
@@ -236,7 +292,8 @@ for I = 1:Ntx
 end
 
 % Multiply by cell area if needed:
-Jacobi = Jacobi * ds;
+Jacobi = Jacobi * ds*(-1j*omega*eps0/2);
+% Jacobi = Jacobi * ds;
 
 end
 % 

@@ -1,4 +1,4 @@
-function [Ek_fft_Abs_val ,Sk_fft_Abs_val ] = FDTD(Nx,Ny,Nxt,Nyt,dx,dy,Nt,eps_r,sig,k, tx_idx, ty_idx,src,pml_L,sigma_max,sigma_bg_c,er_bg_c,dt ,omega,rOut,rIn,rAnt,Ns,Nx_box,xmin_box,xmax_box  )
+function [Ek_fft_1ghz_val ,Sk_fft_1ghz_val ] = FDTD(Nx,Ny,Nxt,Nyt,dx,dy,Nt,eps_r,sig,k, tx_idx, ty_idx,src,pml_L,sigma_max,sigma_bg_c,er_bg_c,dt ,omega,rOut,rIn,rAnt,Ns,Nx_box,xmin_box,xmax_box  )
 
 % Simplified 2D TM FDTD solver with PEC boundaries
 
@@ -288,31 +288,27 @@ for n = 1:Nt
 
 end
 
-Skj = fft(Skj_time, [], 2);  % fft of Skj_time    16xNs
-for k=1:16
-   Skj_fft_Abs(k,:)=reshape(abs(Skj(k,:)),[1,Ns]);
-end
-clear Skj;
+fs=1/dt;
+f0=1e9;
+df_Ghz=fs/Ns/f0;
+n_1ghz=round(1/df_Ghz)+1;
 
-Ek_fft=fft(Ek,[],3); % FFT along time (3rd dim), result is complex
-Ek_fftAbs=abs(Ek_fft);
+Skj = fft(Skj_time, [], 2)/Ns;  % fft of Skj_time    16xNs
+Ek_fft=fft(Ek,[],3)/Ns; % FFT along time (3rd dim), result is complex
 
-clear Ek_fft;
+Sk_fft_1ghz_val=zeros(1,Ntx);
+Ek_fft_1ghz_val=zeros(Nx_box,Nx_box);
 
-% f_range=(0:Ns-1)*(1/(Ns*dt))/1e9; %Ghz
-% plot(f_range,Ek_fftAbs);
 
 % keyboard;
 
-Sk_fft_Abs_val=zeros(1,Ntx);
-Ek_fft_Abs_val=zeros(Nx_box,Nx_box);
 for k=1:16
-Sk_fft_Abs_val(k)=max(Skj_fft_Abs(k,10:end))/Ns*10;
+Sk_fft_1ghz_val(k)=Skj(k,n_1ghz);
 end
 
 for I=1:Nx_box
     for J=1:Nx_box
-    Ek_fft_Abs_val(I,J)=max(Ek_fftAbs(I,J,3:end))/Ns*10;
+    Ek_fft_1ghz_val(I,J)= Ek_fft(I,J,n_1ghz);
     end
 end
 
